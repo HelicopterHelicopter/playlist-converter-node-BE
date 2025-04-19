@@ -93,10 +93,11 @@ app.use(session({
     resave: false,
     saveUninitialized: false, // Don't save session if unmodified
     cookie: {
-        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+        secure: process.env.NODE_ENV === 'production', // REQUIRED for sameSite: 'none'
         httpOnly: true,
-        maxAge: 1000 * 60 * 60 * 24 // Example: 1 day session cookie lifetime
-        // sameSite: 'lax' // Consider adding SameSite attribute
+        maxAge: 1000 * 60 * 60 * 24, // Example: 1 day session cookie lifetime
+        sameSite: 'none', // Allow cross-site cookie sending
+        domain: '.jheels.in' // Set parent domain for cross-subdomain access
     }
 }));
 
