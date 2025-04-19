@@ -1,0 +1,35 @@
+# Git files
+.git
+.gitignore
+
+# Node modules (install within container)
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Environment variables (inject at runtime)
+.env
+
+# Docker specific files
+Dockerfile
+.dockerignore
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Build output (if any)
+dist/
+build/
+
+# PM2 specific files (if any persist)
+~/.pm2/ 
