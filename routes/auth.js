@@ -6,8 +6,15 @@ module.exports = function(dependencies) {
 
     // GET /api/auth/status
     router.get('/status', async (req, res) => {
+        // Log incoming session and cookies for debugging
+        console.log('[AUTH_STATUS] Received request.');
+        console.log('[AUTH_STATUS] req.session:', JSON.stringify(req.session, null, 2));
+        console.log('[AUTH_STATUS] req.cookies:', req.cookies); // Requires cookie-parser
+        console.log('[AUTH_STATUS] req.sessionID:', req.sessionID);
+
         if (req.userSpotifyApi && req.session.spotify_user_id) {
             // We have an active, potentially refreshed client and user ID
+            console.log(`[AUTH_STATUS] Found valid session for user: ${req.session.spotify_user_id}`);
             try {
                 // Optional: Fetch minimal user info to confirm token validity
                 const me = await req.userSpotifyApi.getMe();
@@ -27,6 +34,7 @@ module.exports = function(dependencies) {
             }
         } else {
             // Not logged in or session missing info
+            console.log('[AUTH_STATUS] No valid session found.');
             res.json({ logged_in: false });
         }
     });

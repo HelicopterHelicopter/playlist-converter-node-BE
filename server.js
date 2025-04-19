@@ -249,12 +249,15 @@ app.get('/callback', async (req, res) => {
         req.session.spotify_user_id = me.body.id;
         console.log(`Successfully obtained Spotify token for user: ${me.body.id}`);
 
+        console.log('[CALLBACK] Attempting to save session before redirect...');
         req.session.save((err) => {
             if (err) {
-                console.error("Session save error after callback:", err);
-                return res.redirect(`${FRONTEND_URL}?error=session_save_error`);
+                console.error("[CALLBACK] Session save error:", err);
+                // Still attempt redirect but log the error
+                return res.redirect(`${FRONTEND_URL}?error=session_save_error`); 
             }
-             // Redirect back to the frontend application
+            // Session saved successfully
+            console.log(`[CALLBACK] Session saved successfully for session ID: ${req.sessionID}. Redirecting to frontend.`);
             res.redirect(FRONTEND_URL);
         });
 
