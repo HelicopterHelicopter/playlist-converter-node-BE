@@ -206,17 +206,18 @@ module.exports = function(dependencies) {
 
             // 5. Search Spotify Tracks
             console.log("Searching Spotify for tracks...");
-            // Use search client if available (no change needed here)
-            const spSearch = spotifySearchApi;
+            // Use search client if available 
+            let spSearch = spotifySearchApi; // <<< Use let instead of const
             if (!spSearch) {
                  // If search client failed init, maybe try user client? Less ideal.
                  console.warn("Spotify search client not available, falling back to user token for search.");
-                 spSearch = spUser; 
+                 spSearch = spUser; // Now allowed
                  // Alternatively, return an error if search is critical
                  // return res.status(503).json({ error: "Spotify search service unavailable." });
             }
 
             // Use Promise.all for potentially faster searching (though limited by API rate limits)
+            // Pass the potentially reassigned spSearch variable
             const searchPromises = youtubeTracks.map(trackData => searchSpotifyTrack(spSearch, trackData));
             const searchResults = await Promise.all(searchPromises);
 
