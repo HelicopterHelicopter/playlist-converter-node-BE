@@ -72,6 +72,10 @@ initializeSearchClient();
 // --- Express App Setup ---
 const app = express();
 
+// Tell Express to trust the headers set by the first proxy in front of it
+// This is crucial for secure cookies and correct IP identification behind proxies
+app.set('trust proxy', 1); 
+
 // --- Middleware ---
 
 // CORS
