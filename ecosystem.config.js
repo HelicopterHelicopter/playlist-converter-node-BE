@@ -2,8 +2,8 @@ module.exports = {
   apps : [{
     name   : "playlist-converter-backend", // A name for your application in PM2
     script : "./server.js",               // The script PM2 will run
-    instances: 2, // Number of instances to launch in cluster mode
-    exec_mode: "cluster", // Enable cluster mode
+    // instances: 2, // Removed for single instance mode
+    // exec_mode: "cluster", // Removed for single instance mode
     watch  : process.env.NODE_ENV !== 'production', // Watch only in non-production
     // watch_delay: 1000,                 // Optional: Delay between file change detection and restart
     ignore_watch : ["node_modules", ".git", "*.log"], // Folders/files to ignore when watching
