@@ -1,4 +1,16 @@
 const express = require('express');
+const SpotifyWebApi = require('spotify-web-api-node'); // Need this for temporary client
+
+// Middleware (can be shared or defined here) to extract Authorization Bearer token
+const extractToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        req.token = authHeader.substring(7); // Extract token part
+    } else {
+        req.token = null;
+    }
+    next();
+};
 
 module.exports = function(dependencies) {
     const router = express.Router();
@@ -99,8 +111,10 @@ module.exports = function(dependencies) {
     }
 
     // --- Spotify Playlist Creation/Addition Logic ---
-    async function createSpotifyPlaylist(spUser, userId, playlistName) {
-        if (!spUser) throw new Error("User not authenticated with Spotify.");
+    async function createSpotifyPlaylist(accessToken, userId, playlistName) {
+        if (!accessToken) throw new Error("Missing access token for Spotify operation.");
+        // Create temporary client for this request
+        const spUser = new SpotifyWebApi({ accessToken: accessToken });
         try {
             console.log(`Creating Spotify playlist '${playlistName}' for user ${userId}`);
             const playlist = await spUser.createPlaylist(playlistName, { 'public' : true });
@@ -112,10 +126,12 @@ module.exports = function(dependencies) {
         }
     }
 
-    async function addTracksToSpotifyPlaylist(spUser, playlistUri, trackUris) {
-        if (!spUser) throw new Error("User not authenticated with Spotify.");
+    async function addTracksToSpotifyPlaylist(accessToken, playlistUri, trackUris) {
+        if (!accessToken) throw new Error("Missing access token for Spotify operation.");
         if (!trackUris || trackUris.length === 0) return { success: true, added_count: 0 };
-
+        
+        // Create temporary client for this request
+        const spUser = new SpotifyWebApi({ accessToken: accessToken });
         const playlistId = playlistUri.split(':')[2]; // Extract ID from URI
         let addedCount = 0;
         let errors = [];
@@ -142,15 +158,24 @@ module.exports = function(dependencies) {
     }
 
     // --- POST /api/convert Route ---
-    router.post('/', async (req, res, next) => {
-        // 1. Check Authentication (using middleware-attached client)
-        const spUser = req.userSpotifyApi;
-        if (!spUser) {
-            return res.status(401).json({ error: "User not authenticated with Spotify.", auth_required: true });
+    router.post('/', extractToken, async (req, res, next) => {
+        // 1. Check Authentication via Token
+        const userAccessToken = req.token;
+        if (!userAccessToken) {
+            return res.status(401).json({ error: "Authorization token missing or invalid.", auth_required: true });
         }
-        const spotifyUserId = req.session.spotify_user_id;
-        if (!spotifyUserId) {
-            return res.status(401).json({ error: "Spotify user session invalid. Please login again.", auth_required: true });
+
+        // Create temporary API client for user-specific actions
+        const spUser = new SpotifyWebApi({ accessToken: userAccessToken });
+        let spotifyUserId = null;
+        try {
+            // Verify token and get user ID
+            const me = await spUser.getMe();
+            spotifyUserId = me.body.id;
+            console.log(`[CONVERT] Request authenticated for user: ${spotifyUserId}`);
+        } catch (err) {
+             console.error('[CONVERT] Invalid token during user check:', err.message);
+             return res.status(401).json({ error: "Invalid or expired Spotify token.", auth_required: true });
         }
 
         // 2. Get Request Body Data
@@ -181,11 +206,14 @@ module.exports = function(dependencies) {
 
             // 5. Search Spotify Tracks
             console.log("Searching Spotify for tracks...");
-            // Use search client if available and valid, otherwise fallback to user client
-            const spSearch = spotifySearchApi || spUser;
+            // Use search client if available (no change needed here)
+            const spSearch = spotifySearchApi;
             if (!spSearch) {
-                 console.error("CRITICAL: No valid Spotify client available for search.");
-                 return res.status(500).json({ error: "Spotify API client initialization failed." });
+                 // If search client failed init, maybe try user client? Less ideal.
+                 console.warn("Spotify search client not available, falling back to user token for search.");
+                 spSearch = spUser; 
+                 // Alternatively, return an error if search is critical
+                 // return res.status(503).json({ error: "Spotify search service unavailable." });
             }
 
             // Use Promise.all for potentially faster searching (though limited by API rate limits)
@@ -213,16 +241,16 @@ module.exports = function(dependencies) {
                 });
             }
 
-            // 6. Create Spotify Playlist
+            // 6. Create Spotify Playlist - Pass access token
             console.log(`Creating Spotify playlist '${spotifyPlaylistName}'...`);
-            const spotifyPlaylistUri = await createSpotifyPlaylist(spUser, spotifyUserId, spotifyPlaylistName);
+            const spotifyPlaylistUri = await createSpotifyPlaylist(userAccessToken, spotifyUserId, spotifyPlaylistName);
             const spotifyPlaylistIdOnly = spotifyPlaylistUri.split(':')[2];
             const spotifyPlaylistUrl = `https://open.spotify.com/playlist/${spotifyPlaylistIdOnly}`;
             console.log(`Created playlist URL: ${spotifyPlaylistUrl}`);
 
-            // 7. Add Tracks to Playlist
+            // 7. Add Tracks to Playlist - Pass access token
             console.log(`Adding ${spotifyTrackUris.length} tracks to playlist...`);
-            const addResult = await addTracksToSpotifyPlaylist(spUser, spotifyPlaylistUri, spotifyTrackUris);
+            const addResult = await addTracksToSpotifyPlaylist(userAccessToken, spotifyPlaylistUri, spotifyTrackUris);
 
             // 8. Prepare Response Data
             resultData = {

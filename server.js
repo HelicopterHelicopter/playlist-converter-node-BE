@@ -2,8 +2,6 @@ require('dotenv').config(); // Load .env file variables
 
 const express = require('express');
 const cors = require('cors');
-const session = require('express-session');
-const cookieParser = require('cookie-parser');
 const { google } = require('googleapis');
 const SpotifyWebApi = require('spotify-web-api-node');
 const url = require('url'); // For URL parsing
@@ -74,89 +72,29 @@ const app = express();
 
 // Tell Express to trust the headers set by the first proxy in front of it
 // This is crucial for secure cookies and correct IP identification behind proxies
-app.set('trust proxy', 1); 
+// app.set('trust proxy', 1); // REMOVE (No longer needed for cookies)
 
 // --- Middleware ---
 
 // CORS
 app.use(cors({
-    origin: FRONTEND_URL, // Allow requests from frontend URL
-    credentials: true      // Allow cookies to be sent
+    origin: 'https://convert.jheels.in', // Explicitly allow requests from frontend URL
+    credentials: true      // Allow cookies to be sent - MAYBE REMOVE LATER if no cookies used at all
 }));
 
 // Cookie Parser
-app.use(cookieParser());
+// app.use(cookieParser()); // REMOVE
 
 // Body Parsers
 app.use(express.json()); // For parsing application/json
 app.use(express.urlencoded({ extended: true })); // For parsing application/x-www-form-urlencoded
 
 // Session Management
-app.use(session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false, // Don't save session if unmodified
-    cookie: {
-        secure: process.env.NODE_ENV === 'production', // REQUIRED for sameSite: 'none'
-        httpOnly: true,
-        maxAge: 1000 * 60 * 60 * 24, // Example: 1 day session cookie lifetime
-        sameSite: 'none', // Allow cross-site cookie sending
-        domain: '.jheels.in' // Set parent domain for cross-subdomain access
-    }
-}));
+// app.use(session({ ... })); // REMOVE ENTIRE BLOCK
 
 // Middleware to attach Spotify API client with user tokens if available
 // Also handles token refresh
-app.use(async (req, res, next) => {
-    // Create a request-specific instance to avoid polluting the global one
-    const userSpotifyApi = new SpotifyWebApi({
-        clientId: SPOTIFY_CLIENT_ID,
-        clientSecret: SPOTIFY_CLIENT_SECRET,
-        redirectUri: SPOTIFY_REDIRECT_URI
-    });
-
-    if (req.session.spotify_tokens) {
-        userSpotifyApi.setAccessToken(req.session.spotify_tokens.access_token);
-        userSpotifyApi.setRefreshToken(req.session.spotify_tokens.refresh_token);
-
-        // Check if token is expired (or close to expiring)
-        const expiryTime = req.session.spotify_tokens.expiry_time;
-        if (Date.now() >= expiryTime - 5 * 60 * 1000) { // Refresh if within 5 mins of expiry
-            console.log('Refreshing Spotify access token...');
-            try {
-                const data = await userSpotifyApi.refreshAccessToken();
-                const newAccessToken = data.body['access_token'];
-                const newExpiresIn = data.body['expires_in'];
-                const newExpiryTime = Date.now() + newExpiresIn * 1000;
-
-                console.log('The access token has been refreshed!');
-                userSpotifyApi.setAccessToken(newAccessToken);
-
-                // Update session tokens (important: include refresh token if it changed)
-                req.session.spotify_tokens = {
-                    access_token: newAccessToken,
-                    // Refresh token might or might not be returned on refresh, keep old one if not
-                    refresh_token: data.body['refresh_token'] || req.session.spotify_tokens.refresh_token,
-                    expiry_time: newExpiryTime
-                };
-                req.session.save(); // Explicitly save session after modification
-
-            } catch (err) {
-                console.error('Could not refresh Spotify access token', err.message);
-                // Clear session if refresh fails
-                req.session.destroy();
-                // Don't attach the api to req if refresh failed
-                req.userSpotifyApi = null;
-                return next(); // Proceed without authenticated client
-            }
-        }
-        // Attach the potentially refreshed API client to the request
-        req.userSpotifyApi = userSpotifyApi;
-    } else {
-        req.userSpotifyApi = null; // No tokens in session
-    }
-    next();
-});
+// app.use(async (req, res, next) => { ... }); // REMOVE ENTIRE BLOCK
 
 // --- Helper Functions (Ported/Adapted from Python) ---
 
@@ -219,51 +157,53 @@ app.use('/api/convert', convertRoutesSetup({
 app.get('/callback', async (req, res) => {
     const { code, error, state } = req.query;
 
+    // Use the FRONTEND_URL from environment for redirects
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'; // Fallback needed
+
     if (error) {
         console.error('Spotify Callback Error:', error);
-        return res.redirect(`${FRONTEND_URL}?error=spotify_login_${error}`);
+        // Redirect with error in fragment for frontend to parse
+        return res.redirect(`${frontendUrl}/auth/callback#error=spotify_login_${encodeURIComponent(error)}`);
     }
     if (!code) {
         console.error('Spotify Callback: No code received.');
-        return res.redirect(`${FRONTEND_URL}?error=spotify_no_code`);
+        // Redirect with error in fragment
+        return res.redirect(`${frontendUrl}/auth/callback#error=spotify_no_code`);
     }
 
     // TODO: Validate state if used during login
 
     try {
         // Use the global spotifyApi instance to exchange code for tokens
+        console.log('[CALLBACK] Exchanging code for tokens...');
         const data = await spotifyApi.authorizationCodeGrant(code);
         const { access_token, refresh_token, expires_in } = data.body;
-        const expiry_time = Date.now() + expires_in * 1000;
+        console.log('[CALLBACK] Tokens received successfully.');
 
-        // Store tokens and expiry time in session
-        req.session.spotify_tokens = {
-            access_token,
-            refresh_token,
-            expiry_time
-        };
+        // ** DO NOT STORE IN SESSION **
+        // req.session.spotify_tokens = { ... };
+        // req.session.spotify_user_id = ...;
+        // console.log(`Successfully obtained Spotify token for user: ${me.body.id}`);
 
-        // Get user ID to store (optional, but useful)
-        const tempApi = new SpotifyWebApi({ accessToken: access_token });
-        const me = await tempApi.getMe();
-        req.session.spotify_user_id = me.body.id;
-        console.log(`Successfully obtained Spotify token for user: ${me.body.id}`);
+        // ** DO NOT SAVE SESSION **
+        // req.session.save(...);
 
-        console.log('[CALLBACK] Attempting to save session before redirect...');
-        req.session.save((err) => {
-            if (err) {
-                console.error("[CALLBACK] Session save error:", err);
-                // Still attempt redirect but log the error
-                return res.redirect(`${FRONTEND_URL}?error=session_save_error`); 
-            }
-            // Session saved successfully
-            console.log(`[CALLBACK] Session saved successfully for session ID: ${req.sessionID}. Redirecting to frontend.`);
-            res.redirect(FRONTEND_URL);
-        });
+        // Construct the redirect URL with tokens in the fragment (#)
+        const redirectUrl = new URL(`${frontendUrl}/auth/callback`);
+        redirectUrl.hash = new URLSearchParams({
+            access_token: access_token,
+            refresh_token: refresh_token,
+            expires_in: expires_in.toString()
+        }).toString();
+
+        console.log(`[CALLBACK] Redirecting to frontend with tokens in fragment.`);
+        res.redirect(redirectUrl.toString());
 
     } catch (err) {
         console.error('Error getting Spotify tokens:', err.message || err);
-        res.redirect(`${FRONTEND_URL}?error=spotify_token_error`);
+        // Redirect with error in fragment
+        const errorMsg = err.message || 'unknown_token_error';
+        res.redirect(`${frontendUrl}/auth/callback#error=spotify_token_${encodeURIComponent(errorMsg)}`);
     }
 });
 
